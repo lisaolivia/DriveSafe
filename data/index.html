@@ -15,10 +15,40 @@
 <body>
   <div id="shockModal" class="shock-modal hidden">
     <div class="shock-modal-box">
-      <h2>Shock Trigger Detected!</h2>
+      <h2>Vehicle Accident Detected!</h2>
+      <p id="shockMessage">Perubahan percepatan drastis kendaraan terdeteksi!</p>
       <p>Sistem emergency akan menyala dalam</p>
       <p class="shock-countdown"><span id="shockCountdown">15</span> detik</p>
       <button type="button" id="shockCancel" class="shock-cancel-btn">Batalkan</button>
+    </div>
+  </div>
+  <div id="emergencyOverlay" class="emergency-overlay hidden">
+    <div class="emergency-box">
+      <h2>Emergency Alert! Vehicle Accident Detected</h2>
+      <p id="emergencyCause" class="emergency-cause"></p>
+      <div class="emergency-actions">
+        <button type="button" id="btnCallContact" class="emergency-btn">Hubungi kontak tersimpan</button>
+        <button type="button" id="btnMapHospital" class="emergency-btn">Petakan rumah sakit terdekat</button>
+        <button type="button" id="btnReplayIncident" class="emergency-btn">Putar ulang rekaman insiden</button>
+        <button type="button" id="btnResetEmergency" class="emergency-btn emergency-btn-secondary">Reset Emergency</button>
+      </div>
+      <p id="replayStatus" class="replay-status hidden"></p>
+    </div>
+  </div>
+  <div id="replayOverlay" class="replay-overlay hidden">
+    <div class="replay-box">
+      <div class="replay-header">
+        <h3>Incident Replay</h3>
+        <span id="replayRecBadge" class="replay-rec-badge">REC</span>
+      </div>
+      <p id="replayTimestamp" class="replay-timestamp">t = -5.00s</p>
+      <div class="replay-progress-track">
+        <div id="replayProgressBar" class="replay-progress-bar"></div>
+      </div>
+      <p id="replayOverlayStatus" class="replay-overlay-status">Menyiapkan rekaman...</p>
+      <p class="replay-overlay-metrics">ACC: <span id="replayAccSummary">0.00, 0.00, 0.00</span> ms<sup>2</sup></p>
+      <p class="replay-overlay-metrics">Orientasi: roll <span id="replayRollDeg">0.0</span>&deg; | pitch <span id="replayPitchDeg">0.0</span>&deg;</p>
+      <button type="button" id="btnCloseReplayOverlay" class="emergency-btn emergency-btn-secondary">Tutup Replay</button>
     </div>
   </div>
 

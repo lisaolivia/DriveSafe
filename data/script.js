@@ -11,6 +11,12 @@ var BIKE_SCALE = 1.45;
 var SHOCK_THRESHOLD = 12;
 var SHOCK_COUNTDOWN_START = 15;
 var SHOCK_COOLDOWN_MS = 5000;
+var ROLL_ALERT_DEG = 60;
+var PITCH_ALERT_DEG = 90;
+var ROLLOVER_ALERT_DEG = 60;
+var INCIDENT_PREBUFFER_MS = 5000;
+var INCIDENT_POSTBUFFER_MS = 3000;
+var SENSOR_HISTORY_RETENTION_MS = 120000;
 
 var shockCountdownTimer = null;
 var shockCooldownTimer = null;
@@ -18,6 +24,24 @@ var shockCountdownLeft = SHOCK_COUNTDOWN_START;
 var shockModalActive = false;
 var shockInCooldown = false;
 var currentVehicleType = "car";
+var pendingShockReason = "";
+var currentAlertReason = "";
+var emergencyActive = false;
+var replayTimer = null;
+var incidentStartMs = 0;
+var incidentEndMs = 0;
+var sensorHistory = [];
+var latestSensorFrame = {
+  t: 0,
+  accX: 0,
+  accY: 0,
+  accZ: 0,
+  gyroX: 0,
+  gyroY: 0,
+  gyroZ: 0,
+  rollDeg: 0,
+  pitchDeg: 0
+};
 
 function parentWidth(elem) {
   return elem.parentElement.clientWidth;
@@ -351,8 +375,52 @@ function getLookAtY() {
   return 1.0 * CAR_SCALE;
 }
 
+function toDeg(rad) {
+  return (rad * 180) / Math.PI;
+}
+
+function formatReasonText(reason) {
+  if (reason === "roll") return "Orientasi kendaraan Roll Angle terdeteksi!";
+  if (reason === "pitch") return "Orientasi kendaraan Pitch Angle terdeteksi!";
+  if (reason === "rollover") return "Orientasi kendaraan Overturn/Rollover terdeteksi!";
+  return "Perubahan percepatan drastis kendaraan terdeteksi!";
+}
+
+function detectOrientationReason(rollDeg, pitchDeg) {
+  var absRoll = Math.abs(rollDeg);
+  var absPitch = Math.abs(pitchDeg);
+  if (absPitch >= PITCH_ALERT_DEG) return "pitch";
+  if (absRoll >= ROLLOVER_ALERT_DEG && absPitch >= ROLLOVER_ALERT_DEG) return "rollover";
+  if (absRoll >= ROLL_ALERT_DEG) return "roll";
+  return "";
+}
+
+function pushSensorHistoryFrame() {
+  var now = Date.now();
+  latestSensorFrame.t = now;
+  sensorHistory.push({
+    t: now,
+    accX: latestSensorFrame.accX,
+    accY: latestSensorFrame.accY,
+    accZ: latestSensorFrame.accZ,
+    gyroX: latestSensorFrame.gyroX,
+    gyroY: latestSensorFrame.gyroY,
+    gyroZ: latestSensorFrame.gyroZ,
+    rollDeg: latestSensorFrame.rollDeg,
+    pitchDeg: latestSensorFrame.pitchDeg
+  });
+  var cutoff = now - SENSOR_HISTORY_RETENTION_MS;
+  while (sensorHistory.length && sensorHistory[0].t < cutoff) {
+    sensorHistory.shift();
+  }
+}
+
 function updateShockCountdownDisplay() {
   document.getElementById("shockCountdown").textContent = shockCountdownLeft;
+}
+
+function updateShockMessage(reason) {
+  document.getElementById("shockMessage").textContent = formatReasonText(reason);
 }
 
 function hideShockModal() {
@@ -374,18 +442,95 @@ function startShockCooldown() {
   }, SHOCK_COOLDOWN_MS);
 }
 
-function onShockCountdownEnd() {
-  hideShockModal();
-  startShockCooldown();
-  console.log("DriveSafe: emergency response activated (placeholder for GPS/SMS)");
+function showEmergencyMode() {
+  emergencyActive = true;
+  var overlay = document.getElementById("emergencyOverlay");
+  var causeText = document.getElementById("emergencyCause");
+  var replayStatus = document.getElementById("replayStatus");
+  causeText.textContent = formatReasonText(currentAlertReason || pendingShockReason);
+  replayStatus.classList.add("hidden");
+  replayStatus.textContent = "";
+  overlay.classList.remove("hidden");
 }
 
-function startShockCountdown() {
-  if (shockModalActive || shockInCooldown) return;
+function stopReplayIfRunning() {
+  if (replayTimer) {
+    clearTimeout(replayTimer);
+    replayTimer = null;
+  }
+}
 
+function showReplayOverlay() {
+  document.getElementById("replayOverlay").classList.remove("hidden");
+}
+
+function hideReplayOverlay() {
+  document.getElementById("replayOverlay").classList.add("hidden");
+}
+
+function setReplayOverlayStatus(text) {
+  document.getElementById("replayOverlayStatus").textContent = text;
+}
+
+function setReplayProgress(percent) {
+  document.getElementById("replayProgressBar").style.width = percent + "%";
+}
+
+function setReplayTimestampLabel(secondsFromIncident) {
+  var sign = secondsFromIncident >= 0 ? "+" : "";
+  document.getElementById("replayTimestamp").textContent =
+    "t = " + sign + secondsFromIncident.toFixed(2) + "s";
+}
+
+function setReplayRecBadgeActive(isActive) {
+  document.getElementById("replayRecBadge").classList.toggle("hidden", !isActive);
+}
+
+function updateReplayOverlayMetrics(frame) {
+  document.getElementById("replayAccSummary").textContent =
+    Number(frame.accX).toFixed(2) +
+    ", " +
+    Number(frame.accY).toFixed(2) +
+    ", " +
+    Number(frame.accZ).toFixed(2);
+  document.getElementById("replayRollDeg").textContent = Number(frame.rollDeg).toFixed(1);
+  document.getElementById("replayPitchDeg").textContent = Number(frame.pitchDeg).toFixed(1);
+}
+
+function resetEmergencyMode() {
+  stopReplayIfRunning();
+  document.getElementById("emergencyOverlay").classList.add("hidden");
+  hideReplayOverlay();
+  setReplayRecBadgeActive(false);
+  setReplayProgress(0);
+  setReplayTimestampLabel(-INCIDENT_PREBUFFER_MS / 1000);
+  var replayStatus = document.getElementById("replayStatus");
+  replayStatus.classList.add("hidden");
+  replayStatus.textContent = "";
+  emergencyActive = false;
+  currentAlertReason = "";
+  pendingShockReason = "";
+  incidentStartMs = 0;
+  incidentEndMs = 0;
+}
+
+function onShockCountdownEnd() {
+  hideShockModal();
+  currentAlertReason = pendingShockReason;
+  pendingShockReason = "";
+  showEmergencyMode();
+  startShockCooldown();
+}
+
+function startShockCountdown(reason) {
+  if (shockModalActive || shockInCooldown) return;
+  pendingShockReason = reason || "shock";
+  incidentStartMs = Date.now();
+  incidentEndMs = incidentStartMs + INCIDENT_POSTBUFFER_MS;
   shockModalActive = true;
   shockCountdownLeft = SHOCK_COUNTDOWN_START;
   updateShockCountdownDisplay();
+  updateShockMessage(pendingShockReason);
   document.getElementById("shockModal").classList.remove("hidden");
 
   if (shockCountdownTimer) clearInterval(shockCountdownTimer);
@@ -403,19 +548,146 @@ function startShockCountdown() {
 
 function cancelShockCountdown() {
   hideShockModal();
+  stopReplayIfRunning();
+  pendingShockReason = "";
+  incidentStartMs = 0;
+  incidentEndMs = 0;
   startShockCooldown();
+}
+
+function triggerIncident(reason) {
+  if (emergencyActive || shockModalActive || shockInCooldown) return;
+  startShockCountdown(reason);
 }
 
 function checkShockTrigger(accX, accY) {
   var ax = Math.abs(parseFloat(accX));
   var ay = Math.abs(parseFloat(accY));
   if (ax > SHOCK_THRESHOLD && ay > SHOCK_THRESHOLD) {
-    startShockCountdown();
+    triggerIncident("shock");
   }
+}
+
+function checkOrientationTrigger(rollDeg, pitchDeg) {
+  var reason = detectOrientationReason(rollDeg, pitchDeg);
+  if (reason) triggerIncident(reason);
+}
+
+function showPlaceholderAction(message) {
+  alert(message);
+}
+
+function applyReplayFrame(frame) {
+  document.getElementById("accX").innerHTML = Number(frame.accX).toFixed(2);
+  document.getElementById("accY").innerHTML = Number(frame.accY).toFixed(2);
+  document.getElementById("accZ").innerHTML = Number(frame.accZ).toFixed(2);
+  document.getElementById("gyroX").innerHTML = Number(frame.gyroX).toFixed(2);
+  document.getElementById("gyroY").innerHTML = Number(frame.gyroY).toFixed(2);
+  document.getElementById("gyroZ").innerHTML = Number(frame.gyroZ).toFixed(2);
+  vehicle.rotation.x = frame.gyroY;
+  vehicle.rotation.z = frame.gyroX;
+  vehicle.rotation.y = frame.gyroZ;
+  updateReplayOverlayMetrics(frame);
+  renderer.render(scene, camera);
+}
+
+function closeReplayOverlay() {
+  stopReplayIfRunning();
+  hideReplayOverlay();
+  setReplayRecBadgeActive(false);
+  if (emergencyActive) {
+    document.getElementById("emergencyOverlay").classList.remove("hidden");
+  }
+}
+
+function startIncidentReplay() {
+  if (!incidentStartMs || !incidentEndMs) {
+    showPlaceholderAction("Replay belum tersedia karena data insiden belum lengkap.");
+    return;
+  }
+  if (Date.now() < incidentEndMs) {
+    showPlaceholderAction("Data 3 detik setelah insiden masih direkam. Coba beberapa detik lagi.");
+    return;
+  }
+  var replayStatus = document.getElementById("replayStatus");
+  replayStatus.classList.remove("hidden");
+
+  var replayStart = incidentStartMs - INCIDENT_PREBUFFER_MS;
+  var frames = sensorHistory.filter(function (item) {
+    return item.t >= replayStart && item.t <= incidentEndMs;
+  });
+
+  if (!frames.length) {
+    replayStatus.textContent = "Replay tidak tersedia: log insiden tidak ditemukan.";
+    return;
+  }
+
+  stopReplayIfRunning();
+  document.getElementById("emergencyOverlay").classList.add("hidden");
+  showReplayOverlay();
+  setReplayRecBadgeActive(true);
+  setReplayProgress(0);
+
+  var i = 0;
+  var replayWindowMs = incidentEndMs - incidentStartMs + INCIDENT_PREBUFFER_MS;
+  replayStatus.textContent = "Memutar ulang rekaman insiden...";
+  setReplayOverlayStatus("Memutar ulang rekaman insiden...");
+  var playNext = function () {
+    if (i >= frames.length || !emergencyActive) {
+      stopReplayIfRunning();
+      replayStatus.textContent = "Replay selesai.";
+      setReplayOverlayStatus("Replay selesai. Anda bisa tutup replay atau reset emergency.");
+      setReplayRecBadgeActive(false);
+      setReplayProgress(100);
+      setReplayTimestampLabel(INCIDENT_POSTBUFFER_MS / 1000);
+      return;
+    }
+    var frame = frames[i];
+    applyReplayFrame(frame);
+    replayStatus.textContent =
+      "Replay " +
+      (i + 1) +
+      "/" +
+      frames.length +
+      " | acc(" +
+      Number(frame.accX).toFixed(2) +
+      ", " +
+      Number(frame.accY).toFixed(2) +
+      ", " +
+      Number(frame.accZ).toFixed(2) +
+      ") | roll=" +
+      Number(frame.rollDeg).toFixed(1) +
+      " deg | pitch=" +
+      Number(frame.pitchDeg).toFixed(1) +
+      " deg";
+    setReplayOverlayStatus("Frame " + (i + 1) + "/" + frames.length);
+    setReplayTimestampLabel((frame.t - incidentStartMs) / 1000);
+    var elapsedMs = frame.t - (incidentStartMs - INCIDENT_PREBUFFER_MS);
+    var progress = (elapsedMs / replayWindowMs) * 100;
+    setReplayProgress(Math.max(0, Math.min(100, progress)));
+
+    var nextDelay = 120;
+    if (i < frames.length - 1) {
+      var delta = frames[i + 1].t - frame.t;
+      nextDelay = Math.max(30, Math.min(1000, delta));
+    }
+    i += 1;
+    replayTimer = setTimeout(playNext, nextDelay);
+  };
+  playNext();
 }
 
 function initShockUI() {
   document.getElementById("shockCancel").addEventListener("click", cancelShockCountdown);
+  document.getElementById("btnCallContact").addEventListener("click", function () {
+    showPlaceholderAction("Fitur hubungi kontak tersimpan belum diimplementasikan.");
+  });
+  document.getElementById("btnMapHospital").addEventListener("click", function () {
+    showPlaceholderAction("Fitur petakan rumah sakit terdekat belum diimplementasikan.");
+  });
+  document.getElementById("btnReplayIncident").addEventListener("click", startIncidentReplay);
+  document.getElementById("btnResetEmergency").addEventListener("click", resetEmergencyMode);
+  document.getElementById("btnCloseReplayOverlay").addEventListener("click", closeReplayOverlay);
 }
 
 window.addEventListener("resize", onWindowResize, false);
@@ -438,14 +710,29 @@ if (!!window.EventSource) {
 
   source.addEventListener("gyro_readings", function (e) {
     var obj = JSON.parse(e.data);
-    document.getElementById("gyroX").innerHTML = obj.gyroX;
-    document.getElementById("gyroY").innerHTML = obj.gyroY;
-    document.getElementById("gyroZ").innerHTML = obj.gyroZ;
+    var gyroX = parseFloat(obj.gyroX);
+    var gyroY = parseFloat(obj.gyroY);
+    var gyroZ = parseFloat(obj.gyroZ);
+    var rollDeg = toDeg(gyroX);
+    var pitchDeg = toDeg(gyroY);
 
-    vehicle.rotation.x = obj.gyroY;
-    vehicle.rotation.z = obj.gyroX;
-    vehicle.rotation.y = obj.gyroZ;
-    renderer.render(scene, camera);
+    latestSensorFrame.gyroX = gyroX;
+    latestSensorFrame.gyroY = gyroY;
+    latestSensorFrame.gyroZ = gyroZ;
+    latestSensorFrame.rollDeg = rollDeg;
+    latestSensorFrame.pitchDeg = pitchDeg;
+
+    if (!replayTimer) {
+      document.getElementById("gyroX").innerHTML = obj.gyroX;
+      document.getElementById("gyroY").innerHTML = obj.gyroY;
+      document.getElementById("gyroZ").innerHTML = obj.gyroZ;
+      vehicle.rotation.x = gyroY;
+      vehicle.rotation.z = gyroX;
+      vehicle.rotation.y = gyroZ;
+      renderer.render(scene, camera);
+    }
+    pushSensorHistoryFrame();
+    checkOrientationTrigger(rollDeg, pitchDeg);
   });
 
   source.addEventListener("temperature_reading", function (e) {
@@ -454,9 +741,15 @@ if (!!window.EventSource) {
 
   source.addEventListener("accelerometer_readings", function (e) {
     var obj = JSON.parse(e.data);
-    document.getElementById("accX").innerHTML = obj.accX;
-    document.getElementById("accY").innerHTML = obj.accY;
-    document.getElementById("accZ").innerHTML = obj.accZ;
+    latestSensorFrame.accX = parseFloat(obj.accX);
+    latestSensorFrame.accY = parseFloat(obj.accY);
+    latestSensorFrame.accZ = parseFloat(obj.accZ);
+    if (!replayTimer) {
+      document.getElementById("accX").innerHTML = obj.accX;
+      document.getElementById("accY").innerHTML = obj.accY;
+      document.getElementById("accZ").innerHTML = obj.accZ;
+    }
+    pushSensorHistoryFrame();
     checkShockTrigger(obj.accX, obj.accY);
   });
 }
