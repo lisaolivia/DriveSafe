@@ -1,0 +1,64 @@
+<!--
+  Rui Santos
+  Complete project details at https://RandomNerdTutorials.com/esp32-mpu-6050-web-server/
+-->
+
+<!DOCTYPE HTML><html>
+<head>
+  <title>DriveSafe — ESP32 Monitor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" type="text/css" href="style.css">
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/107/three.min.js"></script>
+</head>
+<body>
+  <div id="shockModal" class="shock-modal hidden">
+    <div class="shock-modal-box">
+      <h2>Shock Trigger Detected!</h2>
+      <p>Sistem emergency akan menyala dalam</p>
+      <p class="shock-countdown"><span id="shockCountdown">15</span> detik</p>
+      <button type="button" id="shockCancel" class="shock-cancel-btn">Batalkan</button>
+    </div>
+  </div>
+
+  <div class="topnav">
+    <h1><i class="fas fa-shield-alt"></i> DriveSafe <i class="fas fa-shield-alt"></i></h1>
+  </div>
+  <div class="content">
+    <div class="cards">
+      <div class="card">
+        <p class="card-title">GYROSCOPE</p>
+        <p><span class="reading">X: <span id="gyroX"></span> rad</span></p>
+        <p><span class="reading">Y: <span id="gyroY"></span> rad</span></p>
+        <p><span class="reading">Z: <span id="gyroZ"></span> rad</span></p>
+      </div>
+      <div class="card">
+        <p class="card-title">ACCELEROMETER</p>
+        <p><span class="reading">X: <span id="accX"></span> ms<sup>2</sup></span></p>
+        <p><span class="reading">Y: <span id="accY"></span> ms<sup>2</sup></span></p>
+        <p><span class="reading">Z: <span id="accZ"></span> ms<sup>2</sup></span></p>
+      </div>
+      <div class="card">
+        <p class="card-title">TEMPERATURE</p>
+        <p><span class="reading"><span id="temp"></span> &deg;C</span></p>
+        <p class="card-title">3D KENDARAAN</p>
+        <div class="vehicle-btns">
+          <button type="button" id="btnBike" class="vehicle-btn" onclick="switchVehicle('bike')">Sepeda</button>
+          <button type="button" id="btnMotor" class="vehicle-btn" onclick="switchVehicle('motor')">Motor</button>
+          <button type="button" id="btnCar" class="vehicle-btn active" onclick="switchVehicle('car')">Mobil</button>
+        </div>
+        <p class="card-title">ORIENTASI</p>
+        <button id="reset" onclick="resetPosition(this)">RESET POSITION</button>
+        <button id="resetX" onclick="resetPosition(this)">X</button>
+        <button id="resetY" onclick="resetPosition(this)">Y</button>
+        <button id="resetZ" onclick="resetPosition(this)">Z</button>
+      </div>
+    </div>
+    <div class="cube-content">
+      <div id="3Dcube"></div>
+    </div>
+  </div>
+<script src="script.js"></script>
+</body>
+</html>
