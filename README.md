@@ -1,13 +1,12 @@
-# DriveSafe — ESP32 MPU6050 Web Server
-
+# DriveSafe 
 Capstone Project 2026 — B06
 
-Sistem monitoring kendaraan berbasis **ESP32** dan sensor **MPU6050** dengan antarmuka web real-time. Aplikasi ini mendeteksi insiden (kecelakaan/kecelakaan potensial), menampilkan orientasi kendaraan dalam 3D, dan menyediakan mode darurat beserta replay rekaman insiden.
+Sistem monitoring kendaraan berbasis **ESP32** dan sensor IMU dengan antarmuka web real-time. Aplikasi ini mendeteksi insiden (kecelakaan/kecelakaan potensial), menampilkan orientasi kendaraan dalam 3D, dan menyediakan mode darurat beserta replay rekaman insiden.
 
 ## Ringkasan Fitur
 
 ### Monitoring Real-Time
-- Data **gyroscope**, **accelerometer**, dan **suhu** MPU6050 via Server-Sent Events (SSE)
+- Data **gyroscope**, **accelerometer**, dan **suhu** dari sensor IMU 
 - Visualisasi **3D kendaraan** (Sepeda, Motor, Mobil) dengan orientasi mengikuti sensor
 - Tombol reset orientasi (full / per sumbu X, Y, Z)
 
@@ -109,6 +108,3 @@ File `data/script.js`:
 - Replay baru dapat diputar setelah periode post-buffer (3 detik) selesai direkam.
 - Fitur hubungi kontak dan peta rumah sakit masih placeholder — siap diintegrasikan pada tahap berikutnya.
 
-## Lisensi & Referensi
-
-Proyek ini berdasarkan tutorial [ESP32 MPU6050 Web Server](https://RandomNerdTutorials.com/esp32-mpu-6050-web-server/) oleh Rui Santos, dikembangkan lebih lanjut untuk kebutuhan capstone DriveSafe.
